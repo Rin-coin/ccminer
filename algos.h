@@ -80,6 +80,7 @@ enum sha_algos {
 	ALGO_MONERO,
 	ALGO_GRAFT,
 	ALGO_STELLITE,
+	ALGO_RINHASH,       /* RinHash */
 	ALGO_AUTO,
 	ALGO_COUNT
 };
@@ -162,6 +163,7 @@ static const char *algo_names[] = {
 	"monero",
 	"graft",
 	"stellite",
+	"rinhash", /* RinHash */
 	"auto", /* reserved for multi algo */
 	""
 };
@@ -217,6 +219,8 @@ static inline int algo_to_int(char* arg)
 			i = ALGO_WHIRLPOOL;
 		else if (!strcasecmp("ziftr", arg))
 			i = ALGO_ZR5;
+		else if (!strcasecmp("rinhash", arg))
+			i = ALGO_RINHASH;
 		else
 			i = -1;
 	}
@@ -248,5 +252,8 @@ static inline int get_cryptonight_algo(int fork)
 
 	return algo;
 }
+
+// Add the extern declaration for the RinHash scanhash function
+extern int scanhash_rinhash(int thr_id, struct work* work, uint32_t max_nonce, unsigned long *hashes_done);
 
 #endif
