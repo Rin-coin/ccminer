@@ -282,11 +282,7 @@ Options:\n\
 			polytimos   Politimos\n\
 			quark       Quark\n\
 			qubit       Qubit\n\
-			sha256d     SHA256d (bitcoin)\n\
-			sha256t     SHA256 x3\n\
-			sha256q     SHA256 x4\n\
-			sia         SIA (Blake2B)\n\
-			sib         Sibcoin (X11+Streebog)\n\
+			rinhash     RinHash (Blake3+Argon2d+SHA3-256)\n\
 			scrypt      Scrypt\n\
 			scrypt-jane Scrypt-jane Chacha\n\
 			skein       Skein SHA2 (Skeincoin)\n\
@@ -477,8 +473,7 @@ struct option options[] = {
 	{ "version", 0, NULL, 'V' },
 	{ "devices", 1, NULL, 'd' },
 	{ "diff-multiplier", 1, NULL, 'm' },
-	{ "diff-factor", 1, NULL, 'f' },
-	{ "diff", 1, NULL, 'f' }, // compat
+	{ "diff-factor", 1, NULL, 'f' }, // compat
 	{ 0, 0, 0, 0 }
 };
 
@@ -1010,6 +1005,11 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 			be32enc(&ntime, work->data[17]);
 			be32enc(&nonce, work->data[19]);
 			break;
+		case ALGO_RINHASH:
+			check_dups = true;
+			be32enc(&ntime, work->data[17]);
+			be32enc(&nonce, work->data[19]);
+			break;
 		default:
 			le32enc(&ntime, work->data[17]);
 			le32enc(&nonce, work->data[19]);
@@ -1061,7 +1061,7 @@ static bool submit_upstream_work(CURL *curl, struct work *work)
 		} else {
 			sprintf(s, "{\"method\": \"mining.submit\", \"params\": ["
 					"\"%s\", \"%s\", \"%s\", \"%s\", \"%s\"], \"id\":%u}",
-					pool->user, work->job_id + 8, xnonce2str, ntimestr, noncestr, stratum.job.shares_count + 10);
+					pool->user, work->job_id, xnonce2str, ntimestr, noncestr, stratum.job.shares_count + 10);
 		}
 		free(xnonce2str);
 		free(ntimestr);
@@ -1646,6 +1646,14 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		memcpy(&work->data[44], &sctx->job.coinbase[sctx->job.coinbase_size-4], 4);
 		sctx->job.height = work->data[32];
 		//applog_hex(work->data, 180);
+	} else if (opt_algo == ALGO_RINHASH) {
+		work->data[0] = swab32(le32dec(sctx->job.version));
+		for (i = 0; i < 8; i++) // reversed prevhash
+			work->data[1 + i] = swab32(work->data[1 + i]);
+		memcpy(&work->data[9], merkle_root, 32);
+		work->data[ 17 ] = swab32(le32dec(sctx->job.ntime));
+		work->data[ 18 ] = swab32(le32dec(sctx->job.nbits));
+		work->data[ 19 ] = 0;
 	} else if (opt_algo == ALGO_EQUIHASH) {
 		memcpy(&work->data[9], sctx->job.coinbase, 32+32); // merkle [9..16] + reserved
 		work->data[25] = le32dec(sctx->job.ntime);
@@ -1751,6 +1759,7 @@ static bool stratum_gen_work(struct stratum_ctx *sctx, struct work *work)
 		case ALGO_EXOSIS:
 		case ALGO_X16R:
 		case ALGO_X16S:
+		case ALGO_RINHASH:  // Add RinHash case
 			work_set_target(work, sctx->job.diff / (256.0 * opt_difficulty));
 			break;
 		case ALGO_KECCAK:
@@ -2472,6 +2481,9 @@ static void *miner_thread(void *userdata)
 			break;
 		case ALGO_QUBIT:
 			rc = scanhash_qubit(thr_id, &work, max_nonce, &hashes_done);
+			break;
+		case ALGO_RINHASH:
+			rc = scanhash_rinhash(thr_id, &work, max_nonce, &hashes_done);
 			break;
 		case ALGO_LYRA2:
 			rc = scanhash_lyra2(thr_id, &work, max_nonce, &hashes_done);
